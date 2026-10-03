@@ -84,9 +84,15 @@ export default async function RootLayout({ children }: { children: React.ReactNo
 
   return (
     <html lang="en">
-	<meta name="impact-site-verification"
-  {...{ value: process.env.NEXT_PUBLIC_IMPACT_SITE_VERIFICATION } as any}/>
-
+      <head>
+        {/* Impact.com site verification (meta tag method). Set NEXT_PUBLIC_IMPACT_SITE_VERIFICATION in env. */}
+        {process.env.NEXT_PUBLIC_IMPACT_SITE_VERIFICATION ? (
+          <meta
+            name="impact-site-verification"
+            {...{ value: process.env.NEXT_PUBLIC_IMPACT_SITE_VERIFICATION } as any}
+          />
+        ) : null}
+      </head>
       <body>
         <DisclosureBanner />
 

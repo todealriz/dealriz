@@ -34,6 +34,14 @@ export default function TermsPage() {
         </p>
       </Section>
 
+      <Section title="Eligibility">
+        <p>
+          You must be at least 13 years old to use {SITE.name}. By using the site
+          or subscribing to deal alerts, you confirm that you meet this age
+          requirement. The site is not directed at children under 13.
+        </p>
+      </Section>
+
       <Section title="DealScore is not financial advice">
         <p>
           Our DealScore is an automated heuristic for entertainment and

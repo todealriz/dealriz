@@ -31,7 +31,18 @@ export default function PrivacyPage() {
           <li><b>Click data</b> — when you click a deal link we log a timestamp, a SHA-256 hash of your IP address (never the plain IP), user agent and referrer, for analytics.</li>
           <li><b>Cookie preference</b> — stored locally in your browser; we use only essential cookies.</li>
         </ul>
-        <p>We do not require accounts, and we do not knowingly collect data from children under 13.</p>
+        <p>We do not require accounts.</p>
+      </Section>
+
+      <Section title="Children's privacy">
+        <p>
+          {SITE.name} is not directed at children under 13, and we do not
+          knowingly collect personal information from them. Deal alert
+          subscriptions are only available to users aged 13 and older. If we
+          learn that we have collected information from a child under 13, we
+          will delete it promptly — contact us at deals@{SITE.domain} to
+          request deletion.
+        </p>
       </Section>
 
       <Section title="How we use it">

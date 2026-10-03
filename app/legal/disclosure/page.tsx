@@ -42,6 +42,13 @@ export default function DisclosurePage() {
         </p>
       </Section>
 
+      <Section title="Amazon Associates disclosure">
+        <p>
+          As an Amazon Associate, we earn from qualifying purchases. Amazon and
+          all related marks are trademarks of Amazon.com, Inc. or its affiliates.
+        </p>
+      </Section>
+
       <Section title="Editorial independence">
         <p>
           Commissions do not determine which deals we publish or how they are
