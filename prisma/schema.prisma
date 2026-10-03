@@ -7,7 +7,7 @@
 //             switch is a one-line edit. See README "Deploy" for the steps.)
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
