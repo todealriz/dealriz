@@ -1,0 +1,138 @@
+// DealRiz v1 — Prisma schema
+//
+// LOCAL DEV:  provider = "sqlite", DATABASE_URL="file:./dev.db" (zero-config)
+// PRODUCTION: change provider to "postgresql", set DATABASE_URL to your Neon
+//             connection string, then run `prisma migrate deploy`.
+//             (Prisma does not allow the provider to be env-driven, so the
+//             switch is a one-line edit. See README "Deploy" for the steps.)
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// NOTE: SQLite does not support Prisma enums, so deal status is a plain
+// String validated in code. See DealStatus in lib/validation.ts.
+// Allowed values: PENDING | APPROVED | REJECTED | EXPIRED
+
+model Store {
+  id               String   @id @default(cuid())
+  slug             String   @unique
+  name             String
+  logoUrl          String?
+  description      String?
+  affiliateNetwork String?
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  deals            Deal[]
+}
+
+model Deal {
+  id              String     @id @default(cuid())
+  slug            String     @unique
+  // Stable id from the originating affiliate network; used for dedupe on re-ingest.
+  externalId      String?    @unique
+  title           String
+  description     String?
+  salePrice       Float
+  originalPrice   Float?
+  discountPct     Int?
+  couponCode      String?
+  affiliateUrl    String
+  imageUrl        String?
+  category        String
+  badge           String?
+  status          String     @default("PENDING") // PENDING|APPROVED|REJECTED|EXPIRED
+  clicks          Int        @default(0)
+  views           Int        @default(0)
+  // DealScore v1 (0-100). See lib/scoring.ts for the weight breakdown.
+  aiScore         Int?
+  // JSON-stringified score components, e.g. {"base":20,"discount":32,...}
+  // Stored as String (not Json) so SQLite and Postgres share one schema.
+  scoreComponents String?
+  scoredAt        DateTime?
+  expiresAt       DateTime?
+  storeId         String
+  store           Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  clickLogs       ClickLog[]
+  priceSnapshots  PriceSnapshot[]
+  // ── Ranking controls (see lib/ranking.ts) ──────────────────
+  // Admin boost multiplier (1.0 = none, up to 2.0). Never derived from
+  // commission — organic ranking is commission-blind by design.
+  boostFactor     Float      @default(1.0)
+  // While pinnedUntil is in the future, the deal sorts above all
+  // unpinned deals regardless of rankScore.
+  pinnedUntil     DateTime?
+  // Set by ingest when the price drops >10% vs the 30-day median
+  // (see lib/affiliates/ingest.ts). Price-drop deals auto-approve
+  // and get a rank boost.
+  isPriceDrop     Boolean    @default(false)
+  // Cross-network dedupe identifiers (optional; e.g. UPC/EAN/ISBN).
+  gtin            String?
+  mpn             String?
+  // When this deal was last featured as Catch of the Day. Used to
+  // rotate the daily pick and exclude yesterday's winner.
+  featuredAt      DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  @@index([status, category])
+  @@index([status, aiScore])
+  @@index([status, createdAt])
+}
+
+model PriceSnapshot {
+  id        String   @id @default(cuid())
+  dealId    String
+  deal      Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  price     Float
+  listPrice Float?
+  createdAt DateTime @default(now())
+
+  @@index([dealId, createdAt])
+}
+
+model ClickLog {
+  id        String   @id @default(cuid())
+  dealId    String
+  deal      Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  // SHA-256 hash of the visitor IP (+ salt). Never store plain IPs.
+  ipHash    String
+  userAgent String?
+  referer   String?
+  createdAt DateTime @default(now())
+
+  @@index([dealId, createdAt])
+  @@index([createdAt])
+}
+
+model EmailAlert {
+  id        String   @id @default(cuid())
+  email     String
+  keyword   String?
+  category  String?
+  // One-click unsubscribe token (unguessable).
+  token     String   @unique @default(cuid())
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@index([isActive])
+}
+
+model AffiliateJob {
+  id          String    @id @default(cuid())
+  network     String
+  status      String    @default("ok") // ok | error
+  dealsFound  Int       @default(0)
+  dealsAdded  Int       @default(0)
+  dealsUpdated Int      @default(0)
+  error       String?
+  startedAt   DateTime  @default(now())
+  finishedAt  DateTime?
+
+  @@index([network, startedAt])
+}

@@ -1,0 +1,34 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* DealRiz base styles — light-theme-first, logo palette (savings green + deep navy) */
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply bg-slate-50 text-slate-900 antialiased;
+}
+
+/* Brand gradient accents (green scale, flat — no neon glow) */
+.brand-gradient-text {
+  @apply bg-gradient-to-r from-brand-500 to-brand-700 bg-clip-text text-transparent;
+}
+
+.brand-gradient-bg {
+  @apply bg-gradient-to-r from-brand-500 to-brand-600;
+}
+
+/* Primary button — use for main CTAs site-wide */
+.btn-primary {
+  @apply rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-brand-700;
+}
+
+/* 2-line clamp helper (Tailwind CDN-free) */
+.clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}

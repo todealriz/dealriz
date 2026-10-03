@@ -1,0 +1,54 @@
+# DealRiz scheduled jobs — free GitHub Actions cron.
+#
+# STRATEGY: Vercel's Hobby plan only allows daily crons, so we run the
+# schedule here (free for public repos; 2,000 min/month for private) and
+# call our own /api/jobs/trigger endpoint with the admin key.
+#
+# The endpoint's "scheduled" job is a SMART scheduler: it always runs
+# ingest + score, but only runs `expire` ~daily and `digest` on Mondays
+# (using the AffiliateJob table as the last-run watermark). So a single
+# 6-hour cron covers everything.
+#
+# SETUP (one time):
+#   1. Push this repo to GitHub.
+#   2. Repo → Settings → Secrets and variables → Actions → New repository secret:
+#        SITE_URL       = https://dealriz.com        (your production URL, no trailing slash)
+#        ADMIN_API_KEY  = <same value as the Vercel env var>
+#   3. Done. Check the "Actions" tab after the first scheduled run.
+
+name: DealRiz scheduled jobs
+
+on:
+  schedule:
+    # Every 6 hours — the "scheduled" job decides what actually runs.
+    - cron: "7 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      job:
+        description: 'Job to run manually'
+        required: false
+        default: 'scheduled'
+        type: choice
+        options: ['scheduled', 'ingest', 'score', 'expire', 'digest', 'all']
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Trigger DealRiz job
+        run: |
+          JOB="${{ inputs.job || 'scheduled' }}"
+          echo "Triggering job: $JOB"
+          HTTP_CODE=$(curl -s -o /tmp/resp.json -w "%{http_code}" \
+            -X POST "${{ secrets.SITE_URL }}/api/jobs/trigger" \
+            -H "Content-Type: application/json" \
+            -H "X-Admin-Key: ${{ secrets.ADMIN_API_KEY }}" \
+            -d "{\"job\":\"$JOB\"}" \
+            --max-time 280)
+          echo "HTTP $HTTP_CODE"
+          cat /tmp/resp.json
+          if [ "$HTTP_CODE" -ge 400 ]; then
+            echo "::error::Job trigger failed with HTTP $HTTP_CODE"
+            exit 1
+          fi
