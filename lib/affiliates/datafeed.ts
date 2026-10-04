@@ -53,8 +53,9 @@ export type MappedRow = {
  */
 export type ColumnMap = Record<string, keyof MappedRow>;
 
-/** Minimal CSV parser: handles quotes, escaped quotes, and the delimiter. */
-function parseLine(line: string, delimiter: string): string[] {
+/** Minimal CSV parser: handles quotes, escaped quotes, and the delimiter.
+ * Exported so API adapters (e.g. ShareASale's CSV reports) can reuse it. */
+export function parseLine(line: string, delimiter: string): string[] {
   const out: string[] = [];
   let cur = "";
   let inQuotes = false;

@@ -14,6 +14,7 @@ import {
   getClicks24hMap,
   sortByRank,
 } from "@/lib/ranking";
+import { SITE } from "@/lib/site";
 
 export const revalidate = REVALIDATE_SECONDS;
 
@@ -118,6 +119,21 @@ export default async function HomePage() {
 
   return (
     <div>
+      {/* Brand signal for search engines: Organization entity for DealRiz.
+          (No sameAs — social profiles aren't configured; don't invent URLs.) */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "Organization",
+            name: "DealRiz",
+            url: "https://dealriz.com",
+            logo: "https://dealriz.com/logo.png",
+            description: SITE.description,
+          }),
+        }}
+      />
       {/* ── Compact Catch of the Day strip ─────────────────── */}
       {catchOfDay && (
         <section

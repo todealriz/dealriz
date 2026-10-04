@@ -62,7 +62,7 @@ async function api(path: string, key: string, init?: RequestInit) {
 
 export default function AdminPage() {
   const { key, save, clear } = useAdminKey();
-  const [tab, setTab] = useState<"queue" | "submit" | "jobs" | "analytics">("queue");
+  const [tab, setTab] = useState<"queue" | "submit" | "import" | "jobs" | "analytics">("queue");
   const [input, setInput] = useState("");
 
   if (key === null) {
@@ -95,6 +95,7 @@ export default function AdminPage() {
   const tabs = [
     ["queue", "Moderation queue"],
     ["submit", "Submit deal"],
+    ["import", "Bulk import"],
     ["jobs", "Jobs"],
     ["analytics", "Analytics"],
   ] as const;
@@ -127,6 +128,7 @@ export default function AdminPage() {
       <div className="mt-6">
         {tab === "queue" && <Queue key_={key} />}
         {tab === "submit" && <SubmitForm key_={key} />}
+        {tab === "import" && <BulkImport key_={key} />}
         {tab === "jobs" && <Jobs key_={key} />}
         {tab === "analytics" && <AnalyticsView key_={key} />}
       </div>
@@ -134,23 +136,30 @@ export default function AdminPage() {
   );
 }
 
+const QUEUE_STATUSES = ["PENDING", "APPROVED", "REJECTED"] as const;
+type QueueStatus = (typeof QUEUE_STATUSES)[number];
+
 function Queue({ key_ }: { key_: string }) {
   const [deals, setDeals] = useState<Deal[]>([]);
+  const [status, setStatus] = useState<QueueStatus>("PENDING");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const data = await api("/api/admin/deals?status=PENDING", key_);
+      const data = await api(`/api/admin/deals?status=${status}`, key_);
       setDeals(data.deals);
+      setSelected(new Set());
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load");
     } finally {
       setLoading(false);
     }
-  }, [key_]);
+  }, [key_, status]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -161,9 +170,63 @@ function Queue({ key_ }: { key_: string }) {
         body: JSON.stringify({ action }),
       });
       setDeals((ds) => ds.filter((d) => d.id !== id));
+      setSelected((s) => {
+        const next = new Set(s);
+        next.delete(id);
+        return next;
+      });
     } catch (e) {
       alert(e instanceof Error ? e.message : "Action failed");
     }
+  };
+
+  const del = async (id: string) => {
+    if (!window.confirm("Delete this deal permanently? This cannot be undone.")) return;
+    try {
+      await api(`/api/admin/deals/${id}`, key_, { method: "DELETE" });
+      setDeals((ds) => ds.filter((d) => d.id !== id));
+      setSelected((s) => {
+        const next = new Set(s);
+        next.delete(id);
+        return next;
+      });
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Delete failed");
+    }
+  };
+
+  const bulkAct = async (action: "approve" | "reject") => {
+    const ids = Array.from(selected);
+    if (ids.length === 0) return;
+    const verb = action === "approve" ? "Approve" : "Reject";
+    if (!window.confirm(`${verb} ${ids.length} selected deal${ids.length === 1 ? "" : "s"}?`)) return;
+    setBusy(true);
+    try {
+      await api("/api/admin/deals/bulk", key_, {
+        method: "POST",
+        body: JSON.stringify({ ids, action }),
+      });
+      load();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Bulk action failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggleAll = () => {
+    setSelected((s) =>
+      s.size === deals.length ? new Set() : new Set(deals.map((d) => d.id))
+    );
+  };
+
+  const toggleOne = (id: string) => {
+    setSelected((s) => {
+      const next = new Set(s);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   };
 
   const boost = async (id: string, boostFactor: number, pinnedUntil: string | null) => {
@@ -180,14 +243,71 @@ function Queue({ key_ }: { key_: string }) {
 
   if (loading) return <p className="text-sm text-slate-500">Loading queue…</p>;
   if (error) return <p className="text-sm text-red-600">{error}</p>;
-  if (deals.length === 0)
-    return <p className="rounded-xl bg-emerald-50 p-6 text-sm text-emerald-700">Queue is clear — nothing pending review. 🎉</p>;
 
   return (
-    <div className="space-y-3">
-      {deals.map((d) => (
-        <DealRow key={d.id} deal={d} onAct={act} onBoost={boost} />
-      ))}
+    <div>
+      {/* Bulk toolbar: status filter + select-all + bulk actions */}
+      <div className="mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white p-3">
+        <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-slate-600">
+          <input
+            type="checkbox"
+            className="h-4 w-4"
+            checked={deals.length > 0 && selected.size === deals.length}
+            onChange={toggleAll}
+          />
+          Select all ({deals.length})
+        </label>
+        <select
+          value={status}
+          onChange={(e) => setStatus(e.target.value as QueueStatus)}
+          className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs font-semibold text-slate-700"
+          aria-label="Deal status filter"
+        >
+          {QUEUE_STATUSES.map((s) => (
+            <option key={s} value={s}>
+              {s.charAt(0) + s.slice(1).toLowerCase()}
+            </option>
+          ))}
+        </select>
+        <div className="ml-auto flex gap-2">
+          <button
+            disabled={selected.size === 0 || busy}
+            onClick={() => bulkAct("approve")}
+            className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
+          >
+            {busy ? "Working…" : `Approve selected (${selected.size})`}
+          </button>
+          <button
+            disabled={selected.size === 0 || busy}
+            onClick={() => bulkAct("reject")}
+            className="rounded-lg bg-slate-200 px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-300 disabled:opacity-50"
+          >
+            {busy ? "Working…" : `Reject selected (${selected.size})`}
+          </button>
+        </div>
+      </div>
+
+      {deals.length === 0 ? (
+        <p className="rounded-xl bg-emerald-50 p-6 text-sm text-emerald-700">
+          {status === "PENDING"
+            ? "Queue is clear — nothing pending review. 🎉"
+            : `No ${status.charAt(0) + status.slice(1).toLowerCase()} deals.`}
+        </p>
+      ) : (
+        <div className="space-y-3">
+          {deals.map((d) => (
+            <DealRow
+              key={d.id}
+              deal={d}
+              onAct={act}
+              onBoost={boost}
+              onDelete={del}
+              checked={selected.has(d.id)}
+              onToggle={() => toggleOne(d.id)}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -196,10 +316,16 @@ function DealRow({
   deal: d,
   onAct,
   onBoost,
+  onDelete,
+  checked,
+  onToggle,
 }: {
   deal: Deal;
   onAct: (id: string, action: "approve" | "reject") => void;
   onBoost: (id: string, boostFactor: number, pinnedUntil: string | null) => void;
+  onDelete: (id: string) => void;
+  checked: boolean;
+  onToggle: () => void;
 }) {
   const [boostFactor, setBoostFactor] = useState(String(d.boostFactor ?? 1));
   const [pinnedUntil, setPinnedUntil] = useState("");
@@ -208,6 +334,13 @@ function DealRow({
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4">
       <div className="flex flex-wrap items-center gap-3">
+        <input
+          type="checkbox"
+          className="h-4 w-4 shrink-0"
+          checked={checked}
+          onChange={onToggle}
+          aria-label={`Select ${d.title}`}
+        />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-bold">
             {d.isPriceDrop && (
@@ -240,6 +373,13 @@ function DealRow({
           className="rounded-lg bg-slate-200 px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-300"
         >
           Reject
+        </button>
+        <button
+          onClick={() => onDelete(d.id)}
+          className="rounded-lg bg-red-100 px-4 py-2 text-xs font-bold text-red-700 hover:bg-red-200"
+          title="Permanently delete this deal"
+        >
+          Delete
         </button>
       </div>
       {/* Ranking override: boost multiplier + optional pin */}
@@ -341,6 +481,225 @@ function SubmitForm({ key_ }: { key_: string }) {
       </button>
       {status && <p className="text-sm text-slate-600">{status}</p>}
     </form>
+  );
+}
+
+type ImportPreview = {
+  totalRows: number;
+  validCount: number;
+  errorCount: number;
+  preview: { title: string; salePrice: number; originalPrice?: number | null; storeName: string; category: string; affiliateUrl: string }[];
+  errors: { rowNumber: number; errors: string[] }[];
+};
+
+type ImportResult = {
+  totalRows: number;
+  imported: number;
+  skippedDuplicates: number;
+  rowErrors: number;
+  errors: { rowNumber: number; errors: string[] }[];
+};
+
+function BulkImport({ key_ }: { key_: string }) {
+  const [file, setFile] = useState<File | null>(null);
+  const [sheetUrl, setSheetUrl] = useState("");
+  const [autoApprove, setAutoApprove] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [preview, setPreview] = useState<ImportPreview | null>(null);
+  const [result, setResult] = useState<ImportResult | null>(null);
+
+  const post = async (dryRun: boolean) => {
+    if (!file && !sheetUrl.trim()) return;
+    setBusy(true);
+    setError("");
+    try {
+      const form = new FormData();
+      if (sheetUrl.trim()) form.append("sheetUrl", sheetUrl.trim());
+      else if (file) form.append("file", file);
+      form.append("dryRun", dryRun ? "1" : "0");
+      form.append("autoApprove", autoApprove ? "1" : "0");
+      // NOTE: no Content-Type header — the browser sets the multipart boundary.
+      const res = await fetch("/api/admin/import", {
+        method: "POST",
+        headers: { "X-Admin-Key": key_ },
+        body: form,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `Import failed (${res.status})`);
+      if (dryRun) setPreview(data);
+      else {
+        setResult(data);
+        setPreview(null);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Import failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const reset = () => {
+    setFile(null);
+    setSheetUrl("");
+    setPreview(null);
+    setResult(null);
+    setError("");
+  };
+
+  const hasInput = !!file || !!sheetUrl.trim();
+
+  return (
+    <div>
+      <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <input
+            type="file"
+            accept=".csv,.tsv,.txt,.xlsx,.xls"
+            onChange={(e) => {
+              setFile(e.target.files?.[0] ?? null);
+              setPreview(null);
+              setResult(null);
+              setError("");
+            }}
+            className="text-sm text-slate-600 file:mr-3 file:rounded-xl file:border-0 file:bg-slate-900 file:px-4 file:py-2 file:text-sm file:font-bold file:text-white hover:file:bg-slate-700"
+          />
+          <input
+            type="url"
+            value={sheetUrl}
+            onChange={(e) => {
+              setSheetUrl(e.target.value);
+              setPreview(null);
+              setResult(null);
+              setError("");
+            }}
+            placeholder="…or paste a Google Sheets link"
+            className="min-w-0 flex-1 rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400"
+          />
+          <a
+            href={`/api/admin/import/template?key=${encodeURIComponent(key_)}`}
+            className="text-sm font-semibold text-brand-700 underline underline-offset-2 hover:text-brand-800"
+          >
+            Download template
+          </a>
+          <label className="ml-auto flex items-center gap-2 text-sm text-slate-600">
+            <input
+              type="checkbox"
+              checked={autoApprove}
+              onChange={(e) => setAutoApprove(e.target.checked)}
+              className="h-4 w-4"
+            />
+            Publish immediately (skip moderation queue)
+          </label>
+        </div>
+        <p className="mt-2 text-xs text-slate-500">
+          Excel (.xlsx/.xls), CSV/TSV/TXT, or a shared Google Sheets link ("Anyone with the link can
+          view") — max 5MB and 2,000 rows. Required columns: title, salePrice,
+          affiliateUrl, storeName. Optional: originalPrice, category, imageUrl, description,
+          couponCode, badge, expiresAt, externalId, gtin.
+        </p>
+        <div className="mt-3 flex gap-2">
+          <button
+            disabled={!hasInput || busy}
+            onClick={() => post(true)}
+            className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-bold text-white hover:bg-slate-700 disabled:opacity-50"
+          >
+            {busy ? "Working…" : "Preview"}
+          </button>
+          {preview && (
+            <button
+              disabled={busy}
+              onClick={() => post(false)}
+              className="rounded-xl bg-brand-600 px-4 py-2 text-sm font-bold text-white hover:bg-brand-700 disabled:opacity-50"
+            >
+              {busy ? "Importing…" : `Confirm import (${preview.validCount} deals)`}
+            </button>
+          )}
+          {(preview || result || error) && (
+            <button onClick={reset} className="px-3 py-2 text-sm font-semibold text-slate-500 hover:underline">
+              Start over
+            </button>
+          )}
+        </div>
+      </div>
+
+      {error && <p className="mt-3 text-sm font-semibold text-red-600">{error}</p>}
+
+      {preview && (
+        <div className="mt-4">
+          <div className="flex gap-4 text-sm">
+            <span><b>{preview.totalRows}</b> rows</span>
+            <span className="text-emerald-700"><b>{preview.validCount}</b> valid</span>
+            <span className="text-red-600"><b>{preview.errorCount}</b> with errors</span>
+          </div>
+          {preview.preview.length > 0 && (
+            <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200 bg-white">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-left text-xs text-slate-500">
+                  <tr>
+                    <th className="p-3">Title</th>
+                    <th className="p-3">Price</th>
+                    <th className="p-3">Was</th>
+                    <th className="p-3">Store</th>
+                    <th className="p-3">Category</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {preview.preview.map((r, i) => (
+                    <tr key={i} className="border-t border-slate-100">
+                      <td className="max-w-xs truncate p-3">{r.title}</td>
+                      <td className="p-3 font-bold">${r.salePrice.toFixed(2)}</td>
+                      <td className="p-3 text-slate-500">{r.originalPrice ? `$${Number(r.originalPrice).toFixed(2)}` : "—"}</td>
+                      <td className="p-3">{r.storeName}</td>
+                      <td className="p-3">{r.category}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="p-3 text-xs text-slate-500">Showing first {preview.preview.length} of {preview.validCount} valid rows.</p>
+            </div>
+          )}
+          {preview.errors.length > 0 && (
+            <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-4">
+              <p className="text-sm font-bold text-red-700">Row errors (fix and re-upload)</p>
+              <ul className="mt-2 max-h-64 space-y-1 overflow-auto text-xs text-red-700">
+                {preview.errors.map((e, i) => (
+                  <li key={i}>Row {e.rowNumber}: {e.errors.join("; ")}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      {result && (
+        <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+          <p className="text-sm font-bold">Import complete</p>
+          <div className="mt-2 flex gap-4 text-sm">
+            <span className="text-emerald-700"><b>{result.imported}</b> imported</span>
+            <span className="text-amber-700"><b>{result.skippedDuplicates}</b> duplicates skipped</span>
+            <span className="text-red-600"><b>{result.rowErrors}</b> rows with errors</span>
+          </div>
+          {!autoApprove && result.imported > 0 && (
+            <p className="mt-2 text-xs text-slate-500">
+              Imported deals are <b>PENDING</b> — approve them in the Moderation queue tab.
+            </p>
+          )}
+          {autoApprove && result.imported > 0 && (
+            <p className="mt-2 text-xs text-slate-500">
+              Deals were published and scored immediately — they should appear on the homepage now.
+            </p>
+          )}
+          {result.errors.length > 0 && (
+            <ul className="mt-3 max-h-64 space-y-1 overflow-auto text-xs text-red-700">
+              {result.errors.map((e, i) => (
+                <li key={i}>{e.rowNumber > 0 ? `Row ${e.rowNumber}: ` : ""}{e.errors.join("; ")}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

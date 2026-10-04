@@ -194,6 +194,19 @@ Agreement terminates scrapers; the stub file documents this).
 
 ## Datafeeds
 
+**ShareASale setup (real adapter — `lib/affiliates/shareasale.ts`):**
+1. Log in to your ShareASale affiliate dashboard and collect:
+   - `SHAREASALE_AFFILIATE_ID` — your affiliate (user) ID, shown at the top of the dashboard; also the `u=` value in any tracking link from Links → "Get a Link/Banner".
+   - `SHAREASALE_API_TOKEN` and `SHAREASALE_API_SECRET` — from the API management section of your dashboard (search the dashboard for "API" — exact location may have shifted with the Awin migration).
+2. Pick your scope:
+   - `SHAREASALE_MERCHANT_IDS` — comma-separated merchant IDs from merchant search (numeric ID in the merchant's profile URL). Optional; empty searches across your joined merchants.
+   - `SHAREASALE_KEYWORDS` — comma-separated product-search keywords (default `"sale"`).
+   - `SHAREASALE_DATAFEED_URLS` — comma-separated per-merchant product datafeed *download* URLs (dashboard → merchant → Datafeed; the link is personalized to your account). Optional — this is the bulk path, no per-product API calls.
+3. Set `ENABLE_SHAREASALE_FEED="true"` in `.env` (Vercel: add all of the above as environment variables).
+4. Verify: go to `/admin` → Jobs → run **ingest**, then watch the logs. You should see `[shareasale] getProducts …` / `Datafeed …` lines and `Normalized N deals total.` New merchants land in the moderation queue for one human review; afterwards auto-approve rules apply.
+
+Notes: the API contract (endpoint, signature scheme, `getProducts`/`couponDeals` actions, CSV columns, and the `m-pr.cfm` deep-link format) was verified against real recorded ShareASale API traffic — details in the header of `shareasale.ts`. Affiliate links are built as `https://www.shareasale.com/m-pr.cfm?merchantID={m}&userID={your id}&productID={p}`. The adapter paces API calls (~1.5s), caps calls/deals per run, dedupes in-batch on merchant+product, and warns + ingests nothing when credentials are absent. Coupon deals are fetched only with `SHAREASALE_INCLUDE_COUPONS="true"` and skipped when they carry no pricing (the current schema requires a price).
+
 **Impact setup:** create an account at
 [impact.com](https://app.impact.com) → Settings → API for your Account SID
 and Auth Token → set `IMPACT_ACCOUNT_SID`, `IMPACT_AUTH_TOKEN`,
@@ -215,6 +228,61 @@ merchant.
 
 ---
 
+## Bulk deal import (spreadsheet upload)
+
+Tired of one-by-one entry? **Admin → Bulk import tab**: pick a file, hit **Preview**
+(dry run — validates everything, shows the first 25 valid rows + per-row errors),
+then **Confirm import**. Optional checkbox publishes immediately instead of sending
+deals to the moderation queue.
+
+- **Formats:** Excel `.xlsx`/`.xls`, CSV, TSV, TXT (delimiter auto-detected) — **or paste
+  a Google Sheets link** (sheet must be shared as "Anyone with the link can view"; imports
+  the first sheet, or the tab in the link's `?gid=`). Max **5MB** and **2,000 rows** per upload.
+- **Template:** the tab has a "Download template" link (or `GET /api/admin/import/template`).
+- **Columns** (headers are case-insensitive; common aliases accepted):
+
+| Column | Required | Aliases |
+|---|---|---|
+| `title` | ✅ | name, product |
+| `salePrice` | ✅ | price, sale price, deal price |
+| `affiliateUrl` | ✅ | url, link, affiliate link |
+| `storeName` | ✅ | store, merchant, retailer |
+| `originalPrice` | – | listPrice, list price, was, msrp, compare at |
+| `category` | – | cat (must be one of the 12 site categories, else row errors) |
+| `imageUrl` | – | image, img, thumbnail |
+| `description` | – | desc, details |
+| `couponCode` | – | coupon, promo code, code |
+| `badge` | – | tag, label |
+| `expiresAt` | – | expires, expiry, end date |
+| `externalId` | – | id, sku (used for dedupe; auto-derived from the URL when omitted) |
+| `gtin` | – | upc, ean, isbn, barcode |
+
+- **Dedupe:** rows matching an existing deal by `externalId`, normalized affiliate URL
+  (tracking params ignored), or `gtin` are skipped and reported as duplicates.
+- **Auto-approve:** imported deals default to PENDING; with "Publish immediately" they go
+  live APPROVED and are DealScored on the spot (no waiting for the score cron).
+- **New dependency:** `xlsx` (SheetJS) for Excel parsing. If you already have
+  `node_modules`, run `npm install` after pulling — otherwise the import route 500s
+  on `.xlsx` uploads.
+
+## Admin: bulk moderation & deletion
+
+The **Moderation queue** tab (`/admin`, key auth) now has:
+
+- **Checkboxes** per deal + **Select all**, with **Approve selected** / **Reject selected**
+  buttons (each asks for confirmation first). Calls `POST /api/admin/deals/bulk`
+  with `{ids, action}` — same behavior as single approve/reject, up to 500 ids
+  per call, returns `{approved, rejected}`.
+- A **status filter** (Pending / Approved / Rejected) so you can find live deals,
+  not just the pending queue.
+- A **Delete** button on every row (with a confirm dialog). This is a **permanent**
+  delete: the deal plus its click logs and price snapshots are removed in one
+  transaction. (`DELETE /api/admin/deals/[id]` → `{ok: true}`, 404 for unknown id.)
+
+Note: the `/admin` link was removed from the public header/footer — the route
+still works at `https://dealriz.com/admin` with your admin key, and
+`/robots.txt` blocks it from crawlers.
+
 ## API reference
 
 | Method | Endpoint | Auth | Description |
@@ -226,7 +294,10 @@ merchant.
 | GET | `/api/admin/deals?status=` | key | Moderation queue |
 | POST | `/api/admin/deals` | key | Submit deal → PENDING |
 | PATCH | `/api/admin/deals/[id]` | key | `{action: "approve"\|"reject"}` or `{action: "boost", boostFactor: 1.0–2.0, pinnedUntil?: ISO datetime\|null}` |
-| DELETE | `/api/admin/deals/[id]` | key | Soft-delete (→ REJECTED) |
+| DELETE | `/api/admin/deals/[id]` | key | **Permanent** delete (removes click logs + price snapshots too) |
+| POST | `/api/admin/deals/bulk` | key | Bulk moderation: `{ids: string[1–500], action: "approve"\|"reject"}` → `{approved, rejected}` |
+| POST | `/api/admin/import` | key | Bulk import: multipart `file` (.xlsx/.xls/.csv/.tsv/.txt) **or** `sheetUrl` (shared Google Sheets link), `dryRun=1` to preview, `autoApprove=1` to publish immediately (default → PENDING) |
+| GET | `/api/admin/import/template` | key | Download CSV import template (exact headers + 2 example rows) |
 | GET | `/api/admin/analytics` | key | Live/pending counts, clicks 7d/30d, top deals, job history |
 | POST | `/api/jobs/trigger` | key | `{job: "ingest"\|"score"\|"expire"\|"digest"\|"all"\|"scheduled"}` |
 
@@ -236,8 +307,11 @@ Auth = `X-Admin-Key` header matching `ADMIN_API_KEY`.
 
 - Dynamic `/sitemap.xml` (live deals + stores, try/catch so builds never fail without a DB)
 - `/robots.txt` (blocks `/admin`, `/api/admin`, `/api/jobs`)
-- JSON-LD `Product` schema on every deal page, OG + Twitter Card meta site-wide
+- JSON-LD `Product` schema on every deal page, **Organization JSON-LD on the
+  homepage** (name/url/logo for brand signals), OG + Twitter Card meta site-wide
 - ISR `revalidate = 300s` on listing/detail/store pages, semantic HTML, clean slugs
+- No public link to `/admin` anywhere in the site chrome (obscurity + key auth);
+  `/robots.txt` blocks `/admin`, `/api/admin`, `/api/jobs` from crawlers
 
 ## Advertising (AdSense — reserved slots)
 
@@ -271,6 +345,14 @@ accidental-click policy). No ads render on `/admin` or `/legal/*`.
    env vars and redeploy (it's a `NEXT_PUBLIC_` var, so it needs a rebuild
    to take effect). The AdSense library loads automatically from the root
    layout; placeholders disappear and real units render.
+
+**ads.txt:** `/ads.txt` is served by the app (public, no auth — Google's crawlers
+must fetch it). Set `ADSENSE_PUBLISHER_ID="ca-pub-XXXXXXXXXXXXXXXX"` (the same
+publisher ID, no prefix) in Vercel env vars and redeploy; the route then serves
+`google.com, ca-pub-XXXXXXXXXXXXXXXX, DIRECT, f08c47fec0942fa0`. Until the var is
+set, it serves `#`-comment instructions instead. (`ADSENSE_PUBLISHER_ID` is a
+server-side var, so no rebuild-sensitive `NEXT_PUBLIC_` prefix is needed —
+a plain redeploy picks it up.)
 
 ## Compliance notes
 

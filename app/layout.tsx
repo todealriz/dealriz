@@ -110,12 +110,6 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               <Link href="/stores" className="rounded-lg px-3 py-2 text-navy-800 hover:bg-slate-100">
                 Stores
               </Link>
-              <Link
-                href="/admin"
-                className="rounded-lg px-2 py-2 text-[11px] font-medium text-slate-400 hover:text-slate-600"
-              >
-                Admin
-              </Link>
             </nav>
           </div>
           {/* Mobile search row */}

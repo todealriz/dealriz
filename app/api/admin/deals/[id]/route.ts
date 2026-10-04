@@ -54,7 +54,9 @@ export async function PATCH(
   return NextResponse.json({ ok: true, deal: updated });
 }
 
-// DELETE /api/admin/deals/[id] — soft-delete (marks REJECTED).
+// DELETE /api/admin/deals/[id] — PERMANENT delete.
+// Removes the deal plus its dependent rows (click logs, price snapshots)
+// in one transaction. 404 for unknown id.
 export async function DELETE(
   req: NextRequest,
   { params }: { params: { id: string } }
@@ -62,9 +64,12 @@ export async function DELETE(
   if (!isAdminRequest(req)) return unauthorizedResponse();
   const deal = await prisma.deal.findUnique({ where: { id: params.id } });
   if (!deal) return NextResponse.json({ error: "Deal not found" }, { status: 404 });
-  await prisma.deal.update({
-    where: { id: params.id },
-    data: { status: "REJECTED" },
-  });
+  // Explicit deletes (the schema also declares onDelete: Cascade, but being
+  // explicit keeps this correct on every provider).
+  await prisma.$transaction([
+    prisma.clickLog.deleteMany({ where: { dealId: params.id } }),
+    prisma.priceSnapshot.deleteMany({ where: { dealId: params.id } }),
+    prisma.deal.delete({ where: { id: params.id } }),
+  ]);
   return NextResponse.json({ ok: true });
 }

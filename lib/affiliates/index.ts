@@ -1,8 +1,9 @@
 import type { AffiliateAdapter } from "./types";
 import { MockAdapter } from "./mock";
 import { ImpactAdapter } from "./impact";
+import { ShareASaleAdapter } from "./shareasale";
 // Production adapters are registered here once implemented.
-// import { AmazonPaapiAdapter, ShareASaleAdapter, CJAdapter } from "./stubs";
+// import { AmazonPaapiAdapter, CJAdapter } from "./stubs";
 
 /**
  * Adapter registry. The ingest job runs every adapter in this list.
@@ -13,11 +14,16 @@ import { ImpactAdapter } from "./impact";
  * Impact is registered behind ENABLE_IMPACT_FEED="true" so a half-configured
  * account can never silently join the pipeline. With credentials absent the
  * adapter warns and returns [] (see lib/affiliates/impact.ts).
+ * ShareASale follows the same pattern behind ENABLE_SHAREASALE_FEED="true"
+ * (see lib/affiliates/shareasale.ts).
  */
 function buildAdapters(): AffiliateAdapter[] {
   const adapters: AffiliateAdapter[] = [new MockAdapter()];
   if (process.env.ENABLE_IMPACT_FEED === "true") {
     adapters.push(new ImpactAdapter());
+  }
+  if (process.env.ENABLE_SHAREASALE_FEED === "true") {
+    adapters.push(new ShareASaleAdapter());
   }
   return adapters;
 }

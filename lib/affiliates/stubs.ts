@@ -38,20 +38,9 @@ export class AmazonPaapiAdapter implements AffiliateAdapter {
   }
 }
 
-// ── ShareASale (part of Awin) ───────────────────────────────────
-// Env: SHAREASALE_API_TOKEN, SHAREASALE_API_SECRET, SHAREASALE_AFFILIATE_ID
-// Docs: https://account.shareasale.com/a-apiManager.cfm (API reference)
-// Coupon/deal endpoints: "Deals" and "Coupon Deals" API resources.
-export class ShareASaleAdapter implements AffiliateAdapter {
-  name = "shareasale";
-  async fetchDeals(): Promise<RawDeal[]> {
-    return notConfigured(
-      this.name,
-      ["SHAREASALE_API_TOKEN", "SHAREASALE_API_SECRET", "SHAREASALE_AFFILIATE_ID"],
-      "https://account.shareasale.com/a-apiManager.cfm"
-    );
-  }
-}
+// ── ShareASale ────────────────────────────────────────────────────────
+// IMPLEMENTED: see lib/affiliates/shareasale.ts (ShareASaleAdapter).
+// (The stub that lived here was removed once the real adapter shipped.)
 
 // ── CJ Affiliate ────────────────────────────────────────────────
 // Env: CJ_API_TOKEN (Personal Access Token), CJ_CID (publisher/company id)

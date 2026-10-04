@@ -48,8 +48,7 @@ export const adminDealSubmitSchema = z.object({
   expiresAt: z.string().optional().or(z.literal("")),
 });
 
-export const adminDealActionSchema = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("approve") }),
+export const adminDealActionSchema = z.discriminatedUnion("action", [  z.object({ action: z.literal("approve") }),
   z.object({ action: z.literal("reject") }),
   // Admin ranking override: boostFactor 1.0–2.0 multiplies rankScore;
   // pinnedUntil (ISO datetime) pins the deal above all unpinned deals
@@ -60,6 +59,12 @@ export const adminDealActionSchema = z.discriminatedUnion("action", [
     pinnedUntil: z.string().datetime({ offset: true }).nullable().optional(),
   }),
 ]);
+
+// Bulk moderation: approve or reject many deals at once.
+export const adminBulkActionSchema = z.object({
+  ids: z.array(z.string().min(1).max(64)).min(1).max(500),
+  action: z.enum(["approve", "reject"]),
+});
 
 export const subscribeSchema = z.object({
   email: z.string().email().max(160),
