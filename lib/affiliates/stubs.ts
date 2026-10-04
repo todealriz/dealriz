@@ -43,20 +43,16 @@ export class AmazonPaapiAdapter implements AffiliateAdapter {
 // (The stub that lived here was removed once the real adapter shipped.)
 
 // ── CJ Affiliate ────────────────────────────────────────────────
-// Env: CJ_API_TOKEN (Personal Access Token), CJ_CID (publisher/company id)
-// Docs: https://developers.cj.com/ (Product Search / GraphQL API)
-export class CJAdapter implements AffiliateAdapter {
-  name = "cj";
-  async fetchDeals(): Promise<RawDeal[]> {
-    return notConfigured(
-      this.name,
-      ["CJ_API_TOKEN", "CJ_CID"],
-      "https://developers.cj.com/"
-    );
-  }
-}
+// IMPLEMENTED: see lib/affiliates/cj.ts (CJAdapter).
+// (The stub that lived here was removed once the real adapter shipped.)
 
-// ── Impact ──────────────────────────────────────────────────────
+// ── Rakuten Advertising ───────────────────────────────────────────────
+// IMPLEMENTED: see lib/affiliates/rakuten.ts (RakutenAdapter).
+// Env: RAKUTEN_CLIENT_ID, RAKUTEN_CLIENT_SECRET, RAKUTEN_SID
+//      (+ ENABLE_RAKUTEN_FEED="true", RAKUTEN_ADVERTISER_IDS, RAKUTEN_KEYWORDS)
+// Note: the dashboard's API Credentials tab may be hidden until Rakuten's
+// Publisher Solutions team grants Web Services access (~3–7 business days).
+// (The stub that lived here was removed once the real adapter shipped.)
 // Env: IMPACT_ACCOUNT_SID, IMPACT_AUTH_TOKEN
 // Docs: https://integrations.impact.com/impact-brand/reference (REST API)
 export class ImpactAdapter implements AffiliateAdapter {

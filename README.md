@@ -207,6 +207,31 @@ Agreement terminates scrapers; the stub file documents this).
 
 Notes: the API contract (endpoint, signature scheme, `getProducts`/`couponDeals` actions, CSV columns, and the `m-pr.cfm` deep-link format) was verified against real recorded ShareASale API traffic — details in the header of `shareasale.ts`. Affiliate links are built as `https://www.shareasale.com/m-pr.cfm?merchantID={m}&userID={your id}&productID={p}`. The adapter paces API calls (~1.5s), caps calls/deals per run, dedupes in-batch on merchant+product, and warns + ingests nothing when credentials are absent. Coupon deals are fetched only with `SHAREASALE_INCLUDE_COUPONS="true"` and skipped when they carry no pricing (the current schema requires a price).
 
+**Rakuten Advertising setup (real adapter — `lib/affiliates/rakuten.ts`):**
+1. Log in to your Rakuten publisher dashboard and collect:
+   - `RAKUTEN_SID` — your publisher Site ID: the number after "SID" in the account-selection dropdown at the top of the dashboard.
+   - `RAKUTEN_CLIENT_ID` and `RAKUTEN_CLIENT_SECRET` — dashboard → Account → Applications (the API Credentials tab). **If this tab is missing**, your account needs Web Services/API access from Rakuten's Publisher Solutions team first (reported turnaround ~3–7 business days) — contact them and ask for API access; the adapter warns and ingests nothing until the credentials exist.
+2. Pick your scope:
+   - `RAKUTEN_ADVERTISER_IDS` — comma-separated advertiser ("mid") IDs to search. Optional; empty searches across your joined advertisers (Walmart and other big brands live here).
+   - `RAKUTEN_KEYWORDS` — comma-separated product-search keywords (e.g. `"headphones,luggage,coffee maker"`). Default `"sale"`.
+3. Set `ENABLE_RAKUTEN_FEED="true"` in `.env` (Vercel: add all of the above as environment variables).
+4. Verify: go to `/admin` → Jobs → run **ingest**, then watch the logs. You should see `[rakuten] productsearch keyword="…" …` lines and `Normalized N deals total.` New merchants land in the moderation queue for one human review; afterwards auto-approve rules apply.
+
+Notes: auth is OAuth2 client credentials (`POST https://api.linksynergy.com/token`, Basic auth, `scope={SID}`, `Accept: application/json` — all verified; see the header of `rakuten.ts`). Product search is `GET /productsearch/1.0` (token as a query param — that's how Rakuten's legacy XML endpoints take it), returning XML with `mid`, `sku`, `productname`, `price`/`saleprice`, `upccode`, `linkurl` (pre-tagged click URL — used as-is), `imageurl`, and `category`. The response has **no stock/availability field**, so out-of-stock filtering isn't possible on this feed. The adapter paces calls (~1.5s), caps calls/pages/deals per run, dedupes in-batch on advertiser+sku, and warns + ingests nothing when credentials are absent. Tenant variance: if the token endpoint 404s, set `RAKUTEN_TOKEN_URL` (some accounts use `api.rakutenmarketing.com/token`).
+
+**CJ Affiliate setup (real adapter — `lib/affiliates/cj.ts`):**
+1. Log in at [developers.cj.com](https://developers.cj.com) and collect:
+   - `CJ_API_TOKEN` — Account → Personal Access Tokens → create and copy. This is a Bearer token; the legacy "developer keys" do **not** work with the product-search API.
+   - `CJ_WEBSITE_ID` — your Website ID / PID: CJ account → Account → Web Site Settings (required).
+   - `CJ_CID` — your publisher Company ID (number by your name, top-right of the CJ dashboard). Optional; only set it if the API rejects calls without it.
+2. Pick your scope:
+   - `CJ_ADVERTISER_IDS` — `"joined"` (default: every program you've joined), `"notjoined"`, or comma-separated advertiser CIDs (e.g. a Best Buy-only feed).
+   - `CJ_KEYWORDS` — comma-separated product-search keywords (default `"sale"`).
+3. Set `ENABLE_CJ_FEED="true"` in `.env` (Vercel: add all of the above as environment variables) and redeploy.
+4. Verify: go to `/admin` → Jobs → run **ingest**, then watch the logs. You should see `[cj] keywords="…" page=…` lines and `Normalized N deals total.` Joined-advertiser deals flow through dedupe → DealScore → auto-approve rules like everything else.
+
+Notes: the adapter calls the licensed REST Product Catalog Search API (`GET https://product-search.api.cj.com/v2/product-search`, `Authorization: Bearer <token>`); it never scrapes. The contract (endpoint, `website-id`/`advertiser-ids`/`keywords` params, XML `<product>` fields, pre-tagged `click-url`) was cross-verified against the official docs scrape, an independent task-brief recall, and a community SDK tested with real credentials — details in the header of `cj.ts`. Deals use the API-returned `click-url` as-is (it's already tagged to your account). Out-of-stock products are skipped, pricing maps as sale-price → `salePrice` (falling back to price) and retail-price → `originalPrice`, and GTIN/MPN come from UPC/ISBN/manufacturer-SKU when present. Pacing ~1.5s between calls, max 10 API calls and 500 deals per run (tunable via `CJ_MAX_DEALS` / `CJ_RECORDS_PER_PAGE`).
+
 **Impact setup:** create an account at
 [impact.com](https://app.impact.com) → Settings → API for your Account SID
 and Auth Token → set `IMPACT_ACCOUNT_SID`, `IMPACT_AUTH_TOKEN`,
