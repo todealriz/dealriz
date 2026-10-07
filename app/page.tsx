@@ -112,8 +112,10 @@ export default async function HomePage() {
     topCandidates.filter(notCatch),
     rankOf
   ).slice(0, 6);
+  // A deal shown in "Top DealScores" must not repeat in "Fresh Deals".
+  const topScoredIds = new Set(topScored.map((d) => d.id));
   const freshDeals = sortByRank(
-    freshCandidates.filter(notCatch),
+    freshCandidates.filter((d) => notCatch(d) && !topScoredIds.has(d.id)),
     rankOf
   ).slice(0, 6);
 

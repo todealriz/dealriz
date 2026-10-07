@@ -48,7 +48,7 @@ export function DealCard({ deal }: { deal: DealCardDeal }) {
       {/* Image */}
       <Link
         href={`/deals/${deal.slug}`}
-        className="relative block aspect-[16/10] overflow-hidden bg-slate-100"
+        className="relative block aspect-[16/10] overflow-hidden bg-white"
         aria-label={deal.title}
       >
         {deal.imageUrl ? (
@@ -57,7 +57,7 @@ export function DealCard({ deal }: { deal: DealCardDeal }) {
             alt={deal.title}
             fill
             sizes="(max-width: 640px) 50vw, (max-width: 1280px) 33vw, 20vw"
-            className="object-cover transition group-hover:scale-105"
+            className="object-contain transition group-hover:scale-105"
           />
         ) : (
           <div
